@@ -52,30 +52,35 @@ export interface EditorContentPart {
 
 export interface CandidateResult {
   agentId: string;
-  candidate: string;
-  score: number;
+  candidate: string; // The code chunk from the agent
   entropy: number;
-  specialization: string;
-  collaborative: boolean;
+}
+
+export interface SortedChunk {
+    agentId: string;
+    chunk: string;
+    rehashedSortKey: string; // The final SHA256 hash used for sorting
 }
 
 export interface ConsensusResult {
-  bestCandidate: string;
-  metaConsensus: string;
-  score: number;
+  assembledCode: string;
+  assemblyChecksum: string; // MD5 checksum of the assembled code
+  sortedChunks: SortedChunk[]; // The list of chunks in their final order
+  score: number; // A composite score based on final metrics
   metrics: {
     coverage: number;
     avgClusterScore: number;
     scoreVariance: number;
-    clusterCount: number;
+    clusterCount: number; // Can be total fragments
     consensusStrength: number;
   };
   diversity: number;
-  collaboration: number;
+  collaboration: number; // Can be based on how many agents contributed
   agentCount: number;
   roundCount: number;
   avgEntropy: number;
 }
+
 
 export interface AppSettings {
   quantumMode: boolean;
@@ -109,12 +114,15 @@ export interface GeminiContentPart {
 
 // Interface for AI Studio specific functions available on the window object
 // FIX: Removed export to prevent declaration conflicts.
-interface AIStudio {
-  hasSelectedApiKey: () => Promise<boolean>;
-  openSelectKey: () => Promise<void>;
-}
 
+// FIX: Moved AIStudio interface into the `declare global` block to ensure it has a single, global definition,
+// which resolves conflicts between multiple declarations of `window.aistudio`.
 declare global {
+  interface AIStudio {
+    hasSelectedApiKey: () => Promise<boolean>;
+    openSelectKey: () => Promise<void>;
+  }
+
   interface Window {
     aistudio: AIStudio;
   }

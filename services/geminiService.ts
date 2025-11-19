@@ -1,9 +1,9 @@
 
 
 import { GoogleGenAI, GenerateContentResponse, GenerateContentParameters } from '@google/genai';
-// FIX: Removed unused AIStudio import.
-import { AgentConfig, AgentName, LogEntry, LogType, GeminiContentPart, CandidateResult, ConsensusResult } from '../types';
+import { AgentConfig, AgentName, LogEntry, LogType, GeminiContentPart, CandidateResult, ConsensusResult, SortedChunk } from '../types';
 import { AGENT_CONFIGS } from '../constants';
+import { sha256, md5 } from '../utils/hashing';
 
 // Declare window.aistudio for API key selection for Veo models
 // The global declaration for `window.aistudio` is now in `types.ts`
@@ -132,10 +132,7 @@ export const runMultiAgentOrchestration = async (
         const candidate: CandidateResult = {
           agentId: agent.name,
           candidate: response,
-          score: Math.random() * 100, // Simulate score
           entropy: entropy,
-          specialization: agent.role,
-          collaborative: Math.random() > 0.7, // Simulate collaboration
         };
         allFragments.push(candidate);
 
@@ -166,11 +163,11 @@ export const runMultiAgentOrchestration = async (
     type: LogType.Event,
   });
 
-  const consensus = formAdvancedConsensus(allFragments, logAgentActivity);
+  const consensus = await formAdvancedConsensus(allFragments, logAgentActivity);
 
   logAgentActivity(AgentName.Echo, {
     timestamp: new Date().toLocaleTimeString(),
-    message: `Consensus achieved with score: ${consensus.score.toFixed(2)}`,
+    message: `Consensus achieved. MD5: ${consensus.assemblyChecksum}`,
     type: LogType.Consensus,
   });
 
@@ -195,14 +192,15 @@ const calculateEntropy = (text: string): number => {
   return entropy / 8; // Normalize to a smaller range
 };
 
-const formAdvancedConsensus = (
+const formAdvancedConsensus = async (
   fragments: CandidateResult[],
   logAgentActivity: (agentName: AgentName, logEntry: LogEntry) => void
-): ConsensusResult => {
+): Promise<ConsensusResult> => {
   if (fragments.length === 0) {
     return {
-      bestCandidate: 'No agents provided a solution.',
-      metaConsensus: '',
+      assembledCode: '// No agents provided a solution.',
+      assemblyChecksum: '',
+      sortedChunks: [],
       score: 0,
       metrics: { coverage: 0, avgClusterScore: 0, scoreVariance: 0, clusterCount: 0, consensusStrength: 0 },
       diversity: 0,
@@ -215,40 +213,67 @@ const formAdvancedConsensus = (
 
   logAgentActivity(AgentName.Echo, {
     timestamp: new Date().toLocaleTimeString(),
-    message: `Analyzing ${fragments.length} candidate fragments for consensus...`,
+    message: `Hashing and sorting ${fragments.length} candidate chunks based on rehashed entropy...`,
     type: LogType.Consensus,
   });
 
-  // Simple consensus: select the fragment with the highest 'score' (simulated here)
-  // In a real scenario, this would involve more sophisticated clustering and merging
-  let bestFragment = fragments.reduce((prev, current) => (prev.score > current.score ? prev : current));
+  // Step 1: Calculate SHA256 sort key for each fragment
+  const chunksWithKeysPromises = fragments.map(async (fragment) => {
+    const sortInput = `${fragment.entropy.toFixed(5)}${fragment.candidate}`;
+    const rehashedSortKey = await sha256(sortInput);
+    return {
+      agentId: fragment.agentId,
+      chunk: fragment.candidate,
+      rehashedSortKey: rehashedSortKey,
+    };
+  });
+  
+  const chunksWithKeys = await Promise.all(chunksWithKeysPromises);
 
-  // Meta-consensus: combine top N fragments or a simple concatenation
-  const sortedFragments = [...fragments].sort((a, b) => b.score - a.score);
-  const topFragments = sortedFragments.slice(0, Math.min(5, sortedFragments.length));
-  const metaConsensus = topFragments.map((f) => `// Agent ${f.agentId} contribution:\n${f.candidate}`).join('\n\n');
+  // Step 2: Sort chunks based on the SHA256 hash
+  const sortedChunks: SortedChunk[] = chunksWithKeys.sort((a, b) =>
+    a.rehashedSortKey.localeCompare(b.rehashedSortKey)
+  );
 
-  // Simulate metrics
+  logAgentActivity(AgentName.Echo, {
+    timestamp: new Date().toLocaleTimeString(),
+    message: 'Chunk sorting complete. Assembling final code...',
+    type: LogType.Consensus,
+  });
+
+  // Step 3: Concatenate sorted chunks to form final code
+  const assembledCode = sortedChunks.map(c => `// --- Chunk from Agent ${c.agentId} (SHA256: ${c.rehashedSortKey.substring(0,12)}...) ---\n${c.chunk}`).join('\n\n');
+
+  // Step 4: "Backtrace" - create MD5 checksum for verification
+  const assemblyChecksum = md5(assembledCode);
+
+  logAgentActivity(AgentName.Echo, {
+    timestamp: new Date().toLocaleTimeString(),
+    message: `Assembly complete. MD5 Checksum: ${assemblyChecksum}`,
+    type: LogType.Consensus,
+  });
+
+  // Step 5: Calculate final metrics
   const totalAgents = new Set(fragments.map((f) => f.agentId)).size;
   const avgEntropy = fragments.reduce((sum, f) => sum + f.entropy, 0) / fragments.length;
-  const diversity = fragments.length > 1 ? calculateEntropy(fragments.map((f) => f.specialization).join('')) / AGENT_CONFIGS.length : 0;
-  const collaboration = fragments.filter((f) => f.collaborative).length / fragments.length;
+  const score = (avgEntropy * 50) + (totalAgents * 10); // Example scoring metric
 
   return {
-    bestCandidate: bestFragment.candidate,
-    metaConsensus: metaConsensus,
-    score: bestFragment.score,
+    assembledCode: assembledCode,
+    assemblyChecksum: assemblyChecksum,
+    sortedChunks: sortedChunks,
+    score: score,
     metrics: {
-      coverage: fragments.length / (AGENT_CONFIGS.length * 3), // Example metric
-      avgClusterScore: bestFragment.score,
+      coverage: fragments.length / (AGENT_CONFIGS.length * 3),
+      avgClusterScore: score,
       scoreVariance: 0.1, // Placeholder
-      clusterCount: Math.ceil(fragments.length / 2), // Placeholder
-      consensusStrength: bestFragment.score / 100, // Placeholder
+      clusterCount: fragments.length,
+      consensusStrength: score / 100,
     },
-    diversity: diversity,
-    collaboration: collaboration,
+    diversity: calculateEntropy(fragments.map(f => f.agentId).join('')),
+    collaboration: totalAgents / AGENT_CONFIGS.length,
     agentCount: totalAgents,
-    roundCount: 3, // Assuming 3 rounds from input
+    roundCount: 3, // Assuming this for now
     avgEntropy: avgEntropy,
   };
 };

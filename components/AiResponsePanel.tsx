@@ -1,6 +1,6 @@
 
 import React, { useState, useCallback } from 'react';
-import { AgentStatus, AgentName, LogEntry, ConsensusResult, LogType } from '../types';
+import { AgentStatus, AgentName, LogEntry, ConsensusResult, LogType, SortedChunk } from '../types';
 import { AGENT_COLOR_MAP, LOG_TYPE_CLASS_MAP } from '../constants';
 
 interface AiResponsePanelProps {
@@ -9,7 +9,7 @@ interface AiResponsePanelProps {
   agentStatuses: AgentStatus[];
   consensusResult: ConsensusResult | null;
   onCopyConsensus: () => void;
-  onApplyConsensus: (type: 'best' | 'meta') => void;
+  onApplyConsensus: (type: 'assembled') => void;
   onRerunOrchestrator: () => void;
 }
 
@@ -66,34 +66,48 @@ const AiResponsePanel: React.FC<AiResponsePanelProps> = ({
     );
   }, [showFullLogs, toggleLogs, getLogClasses]);
 
+  const renderSortedChunk = useCallback((chunk: SortedChunk, index: number) => {
+    return (
+        <div key={index} className="bg-zinc-800/50 p-2 rounded mb-2 border-l-2 border-emerald-500">
+            <div className="text-xs text-zinc-400 flex justify-between">
+                <span>Chunk #{index + 1} (from Agent {chunk.agentId})</span>
+                <span className="font-mono">SHA256: {chunk.rehashedSortKey.substring(0, 12)}...</span>
+            </div>
+            <pre className="text-xs text-slate-300 mt-1 whitespace-pre-wrap max-h-20 overflow-auto">
+                {chunk.chunk}
+            </pre>
+        </div>
+    );
+  }, []);
+
   const renderConsensusPanel = useCallback(() => {
     if (!consensusResult) return null;
 
     return (
-      <div className="consensus-panel bg-zinc-700/50 border border-purple-400 rounded-lg p-3 mt-4 max-h-[300px] overflow-y-auto">
+      <div className="consensus-panel bg-zinc-700/50 border border-purple-400 rounded-lg p-3 mt-4">
         <div className="flex justify-between items-center font-bold text-purple-400 mb-2">
-          <span>Enhanced Multi-Agent Consensus Results</span>
-          <span className="bg-purple-600 text-white px-2 py-0.5 rounded-full text-xs">Score: {consensusResult.score.toFixed(2)}</span>
+            <span>Enhanced Consensus: Assembled Code</span>
+            <span className="bg-purple-600 text-white px-2 py-0.5 rounded-full text-xs font-mono">MD5: {consensusResult.assemblyChecksum}</span>
         </div>
-        <div className="grid grid-cols-2 gap-2 text-xs mb-3">
-          <div className="bg-emerald-600/10 p-2 rounded"><strong>Coverage:</strong> {(consensusResult.metrics.coverage * 100).toFixed(1)}%</div>
-          <div className="bg-purple-600/10 p-2 rounded"><strong>Diversity:</strong> {consensusResult.diversity.toFixed(2)}</div>
-          <div className="bg-teal-600/10 p-2 rounded"><strong>Collaboration:</strong> {consensusResult.collaboration.toFixed(2)}</div>
-          <div className="bg-amber-600/10 p-2 rounded"><strong>Clusters:</strong> {consensusResult.metrics.clusterCount}</div>
-        </div>
-        <div className="mb-2 text-sm font-semibold text-slate-200">Best Candidate Preview:</div>
-        <pre className="bg-zinc-900 p-2 rounded text-xs overflow-auto max-h-36 border border-teal-400/50">
-          {consensusResult.bestCandidate.substring(0, 300)}...
+        
+        <div className="mb-2 text-sm font-semibold text-slate-200">Final Assembled Code Preview:</div>
+        <pre className="bg-zinc-900 p-2 rounded text-xs overflow-auto max-h-48 border border-teal-400/50">
+            {consensusResult.assembledCode}
         </pre>
+
+        <div className="mt-4 mb-2 text-sm font-semibold text-slate-200">Sorted Code Chunks ({consensusResult.sortedChunks.length}):</div>
+        <div className="max-h-48 overflow-y-auto p-1 bg-black/20 rounded">
+            {consensusResult.sortedChunks.map(renderSortedChunk)}
+        </div>
+
         <div className="flex gap-2 mt-3 text-xs">
-          <button onClick={onCopyConsensus} className="flex-1 px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded">Copy Consensus</button>
-          <button onClick={() => onApplyConsensus('best')} className="flex-1 px-2 py-1 bg-cyan-600 hover:bg-cyan-700 text-white rounded">Apply Best Candidate</button>
-          <button onClick={() => onApplyConsensus('meta')} className="flex-1 px-2 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded">Apply Meta-Consensus</button>
+          <button onClick={onCopyConsensus} className="flex-1 px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded">Copy Assembled Code</button>
+          <button onClick={() => onApplyConsensus('assembled')} className="flex-1 px-2 py-1 bg-cyan-600 hover:bg-cyan-700 text-white rounded">Apply Assembled Code</button>
           <button onClick={onRerunOrchestrator} className="flex-1 px-2 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded">Enhance Further</button>
         </div>
       </div>
     );
-  }, [consensusResult, onCopyConsensus, onApplyConsensus, onRerunOrchestrator]);
+  }, [consensusResult, onCopyConsensus, onApplyConsensus, onRerunOrchestrator, renderSortedChunk]);
 
   if (!isOpen) return null;
 

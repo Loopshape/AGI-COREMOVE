@@ -1,4 +1,4 @@
-
+#!/bin/env node
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import Editor from './components/Editor';
@@ -179,21 +179,20 @@ const App: React.FC = () => {
   }, [settings.multiAgentMode, promptInput, handleMultiAgentRun]);
 
   const handleCopyConsensus = useCallback(() => {
-    if (consensusResult?.bestCandidate) {
-      navigator.clipboard.writeText(consensusResult.bestCandidate).then(() => {
-        quantumNotify('Best candidate code copied to clipboard!', 'success');
+    if (consensusResult?.assembledCode) {
+      navigator.clipboard.writeText(consensusResult.assembledCode).then(() => {
+        quantumNotify('Assembled code copied to clipboard!', 'success');
       });
     }
   }, [consensusResult]);
 
   const handleApplyConsensus = useCallback(
-    (type: 'best' | 'meta') => {
-      const codeToApply = type === 'best' ? consensusResult?.bestCandidate : consensusResult?.metaConsensus;
-      if (codeToApply) {
-        setEditorContent(codeToApply);
-        setHistory((prev) => [...prev, codeToApply]);
+    (type: 'assembled') => {
+      if (type === 'assembled' && consensusResult?.assembledCode) {
+        setEditorContent(consensusResult.assembledCode);
+        setHistory((prev) => [...prev, consensusResult.assembledCode]);
         setRedoStack([]); // Clear redo stack on new content
-        quantumNotify(`${type === 'best' ? 'Best candidate' : 'Meta-consensus'} applied to editor!`, 'success');
+        quantumNotify('Assembled code applied to editor!', 'success');
       }
     },
     [consensusResult, setHistory, setRedoStack]
